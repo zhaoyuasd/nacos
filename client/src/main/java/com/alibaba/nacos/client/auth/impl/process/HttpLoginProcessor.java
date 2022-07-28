@@ -35,8 +35,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import static com.alibaba.nacos.client.naming.utils.UtilAndComs.HTTP;
 import static com.alibaba.nacos.client.naming.utils.UtilAndComs.webContext;
+import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTP_PREFIX;
 
 /**
  * Login processor for Http.
@@ -61,14 +61,14 @@ public class HttpLoginProcessor implements LoginProcessor {
         String contextPath = ContextPathUtil
                 .normalizeContextPath(properties.getProperty(PropertyKeyConst.CONTEXT_PATH, webContext));
         String server = properties.getProperty(NacosAuthLoginConstant.SERVER, StringUtils.EMPTY);
-        String url = HTTP + server + contextPath + LOGIN_URL;
+        String url = HTTP_PREFIX + server + contextPath + LOGIN_URL;
         
         if (server.contains(Constants.HTTP_PREFIX)) {
             url = server + contextPath + LOGIN_URL;
         }
         
-        Map<String, String> params = new HashMap<String, String>(2);
-        Map<String, String> bodyMap = new HashMap<String, String>(2);
+        Map<String, String> params = new HashMap<>(2);
+        Map<String, String> bodyMap = new HashMap<>(2);
         params.put(PropertyKeyConst.USERNAME, properties.getProperty(PropertyKeyConst.USERNAME, StringUtils.EMPTY));
         bodyMap.put(PropertyKeyConst.PASSWORD, properties.getProperty(PropertyKeyConst.PASSWORD, StringUtils.EMPTY));
         try {
@@ -91,7 +91,7 @@ public class HttpLoginProcessor implements LoginProcessor {
             }
             return loginIdentityContext;
         } catch (Exception e) {
-            SECURITY_LOGGER.error("[ NacosClientAuthServiceImpl] login http request failed"
+            SECURITY_LOGGER.error("[NacosClientAuthServiceImpl] login http request failed"
                     + " url: {}, params: {}, bodyMap: {}, errorMsg: {}", url, params, bodyMap, e.getMessage());
             return null;
         }

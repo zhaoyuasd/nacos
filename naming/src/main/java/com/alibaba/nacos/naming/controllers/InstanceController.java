@@ -22,7 +22,10 @@ import com.alibaba.nacos.api.naming.CommonParams;
 import com.alibaba.nacos.api.naming.pojo.Instance;
 import com.alibaba.nacos.api.naming.utils.NamingUtils;
 import com.alibaba.nacos.auth.annotation.Secured;
+import com.alibaba.nacos.common.notify.NotifyCenter;
 import com.alibaba.nacos.common.spi.NacosServiceLoader;
+import com.alibaba.nacos.common.trace.DeregisterInstanceReason;
+import com.alibaba.nacos.common.trace.event.NamingTraceEvent;
 import com.alibaba.nacos.common.utils.ConvertUtils;
 import com.alibaba.nacos.common.utils.JacksonUtils;
 import com.alibaba.nacos.common.utils.StringUtils;
@@ -86,6 +89,8 @@ public class InstanceController {
     
     @Autowired
     private UpgradeJudgement upgradeJudgement;
+
+    private static final String METADATA = "metadata";
     
     public InstanceController() {
         Collection<InstanceExtensionHandler> handlers = NacosServiceLoader.load(InstanceExtensionHandler.class);
@@ -113,6 +118,9 @@ public class InstanceController {
                 .setDefaultInstanceEphemeral(switchDomain.isDefaultInstanceEphemeral()).setRequest(request).build();
         
         getInstanceOperator().registerInstance(namespaceId, serviceName, instance);
+        NotifyCenter.publishEvent(new NamingTraceEvent.RegisterInstanceTraceEvent(System.currentTimeMillis(), "",
+                false, namespaceId, NamingUtils.getGroupName(serviceName), NamingUtils.getServiceName(serviceName),
+                instance.toInetAddr()));
         return "ok";
     }
     
@@ -134,6 +142,9 @@ public class InstanceController {
         NamingUtils.checkServiceNameFormat(serviceName);
         
         getInstanceOperator().removeInstance(namespaceId, serviceName, instance);
+        NotifyCenter.publishEvent(new NamingTraceEvent.DeregisterInstanceTraceEvent(System.currentTimeMillis(), "",
+                false, DeregisterInstanceReason.REQUEST, namespaceId, NamingUtils.getGroupName(serviceName), NamingUtils.getServiceName(serviceName),
+                instance.toInetAddr()));
         return "ok";
     }
     
@@ -175,7 +186,7 @@ public class InstanceController {
         String consistencyType = WebUtils.optional(request, "consistencyType", StringUtils.EMPTY);
         String instances = WebUtils.optional(request, "instances", StringUtils.EMPTY);
         List<Instance> targetInstances = parseBatchInstances(instances);
-        String metadata = WebUtils.required(request, "metadata");
+        String metadata = WebUtils.required(request, METADATA);
         Map<String, String> targetMetadata = UtilsAndCommons.parseMetadata(metadata);
         InstanceOperationInfo instanceOperationInfo = buildOperationInfo(serviceName, consistencyType, targetInstances);
         
@@ -208,7 +219,7 @@ public class InstanceController {
         String consistencyType = WebUtils.optional(request, "consistencyType", StringUtils.EMPTY);
         String instances = WebUtils.optional(request, "instances", StringUtils.EMPTY);
         List<Instance> targetInstances = parseBatchInstances(instances);
-        String metadata = WebUtils.required(request, "metadata");
+        String metadata = WebUtils.required(request, METADATA);
         Map<String, String> targetMetadata = UtilsAndCommons.parseMetadata(metadata);
         InstanceOperationInfo instanceOperationInfo = buildOperationInfo(serviceName, consistencyType, targetInstances);
         List<String> operatedInstances = getInstanceOperator()
@@ -266,7 +277,7 @@ public class InstanceController {
             cluster = WebUtils.optional(request, "cluster", UtilsAndCommons.DEFAULT_CLUSTER_NAME);
         }
         InstancePatchObject patchObject = new InstancePatchObject(cluster, ip, Integer.parseInt(port));
-        String metadata = WebUtils.optional(request, "metadata", StringUtils.EMPTY);
+        String metadata = WebUtils.optional(request, METADATA, StringUtils.EMPTY);
         if (StringUtils.isNotBlank(metadata)) {
             patchObject.setMetadata(UtilsAndCommons.parseMetadata(metadata));
         }
@@ -311,13 +322,8 @@ public class InstanceController {
         String clientIP = WebUtils.optional(request, "clientIP", StringUtils.EMPTY);
         int udpPort = Integer.parseInt(WebUtils.optional(request, "udpPort", "0"));
         boolean healthyOnly = Boolean.parseBoolean(WebUtils.optional(request, "healthyOnly", "false"));
-        
-        boolean isCheck = Boolean.parseBoolean(WebUtils.optional(request, "isCheck", "false"));
-        
         String app = WebUtils.optional(request, "app", StringUtils.EMPTY);
-        String env = WebUtils.optional(request, "env", StringUtils.EMPTY);
-        String tenant = WebUtils.optional(request, "tid", StringUtils.EMPTY);
-        
+
         Subscriber subscriber = new Subscriber(clientIP + ":" + udpPort, agent, app, clientIP, namespaceId, serviceName,
                 udpPort, clusters);
         return getInstanceOperator().listInstance(namespaceId, serviceName, subscriber, clusters, healthyOnly);
@@ -351,7 +357,7 @@ public class InstanceController {
         result.put("weight", instance.getWeight());
         result.put("healthy", instance.isHealthy());
         result.put("instanceId", instance.getInstanceId());
-        result.set("metadata", JacksonUtils.transferToJsonNode(instance.getMetadata()));
+        result.set(METADATA, JacksonUtils.transferToJsonNode(instance.getMetadata()));
         return result;
     }
     

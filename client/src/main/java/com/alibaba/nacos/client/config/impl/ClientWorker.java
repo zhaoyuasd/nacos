@@ -138,7 +138,7 @@ public class ClientWorker implements Closeable {
      * @param group     group of data
      * @param listeners listeners
      */
-    public void addListeners(String dataId, String group, List<? extends Listener> listeners) {
+    public void addListeners(String dataId, String group, List<? extends Listener> listeners) throws NacosException {
         group = blank2defaultGroup(group);
         CacheData cache = addCacheDataIfAbsent(dataId, group);
         synchronized (cache) {
@@ -178,18 +178,20 @@ public class ClientWorker implements Closeable {
     /**
      * Add listeners for tenant with content.
      *
-     * @param dataId    dataId of data
-     * @param group     group of data
-     * @param content   content
-     * @param listeners listeners
+     * @param dataId           dataId of data
+     * @param group            group of data
+     * @param content          content
+     * @param encryptedDataKey encryptedDataKey
+     * @param listeners        listeners
      * @throws NacosException nacos exception
      */
-    public void addTenantListenersWithContent(String dataId, String group, String content,
+    public void addTenantListenersWithContent(String dataId, String group, String content, String encryptedDataKey,
             List<? extends Listener> listeners) throws NacosException {
         group = blank2defaultGroup(group);
         String tenant = agent.getTenant();
         CacheData cache = addCacheDataIfAbsent(dataId, group, tenant);
         synchronized (cache) {
+            cache.setEncryptedDataKey(encryptedDataKey);
             cache.setContent(content);
             for (Listener listener : listeners) {
                 cache.addListener(listener);
@@ -247,7 +249,7 @@ public class ClientWorker implements Closeable {
     void removeCache(String dataId, String group, String tenant) {
         String groupKey = GroupKey.getKeyTenant(dataId, group, tenant);
         synchronized (cacheMap) {
-            Map<String, CacheData> copy = new HashMap<String, CacheData>(cacheMap.get());
+            Map<String, CacheData> copy = new HashMap<>(cacheMap.get());
             copy.remove(groupKey);
             cacheMap.set(copy);
         }
@@ -320,7 +322,7 @@ public class ClientWorker implements Closeable {
                 cache.setTaskId(taskId);
             }
             
-            Map<String, CacheData> copy = new HashMap<String, CacheData>(cacheMap.get());
+            Map<String, CacheData> copy = new HashMap<>(cacheMap.get());
             copy.put(key, cache);
             cacheMap.set(copy);
         }
@@ -362,11 +364,12 @@ public class ClientWorker implements Closeable {
                 // fix issue # 1317
                 if (enableRemoteSyncConfig) {
                     ConfigResponse response = getServerConfig(dataId, group, tenant, 3000L, false);
+                    cache.setEncryptedDataKey(response.getEncryptedDataKey());
                     cache.setContent(response.getContent());
                 }
             }
             
-            Map<String, CacheData> copy = new HashMap<String, CacheData>(this.cacheMap.get());
+            Map<String, CacheData> copy = new HashMap<>(this.cacheMap.get());
             copy.put(key, cache);
             cacheMap.set(copy);
         }
@@ -432,8 +435,8 @@ public class ClientWorker implements Closeable {
         try {
             ConfigResponse response = getServerConfig(cacheData.dataId, cacheData.group, cacheData.tenant, 3000L,
                     notify);
-            cacheData.setContent(response.getContent());
             cacheData.setEncryptedDataKey(response.getEncryptedDataKey());
+            cacheData.setContent(response.getContent());
             if (null != response.getConfigType()) {
                 cacheData.setType(response.getConfigType());
             }
@@ -473,7 +476,7 @@ public class ClientWorker implements Closeable {
         
         Map<ClientConfigMetricRequest.MetricsKey, Object> metricValues = getMetricsValue(metricsKeys);
         metric.put("metricValues", metricValues);
-        Map<String, Object> metrics = new HashMap<String, Object>(1);
+        Map<String, Object> metrics = new HashMap<>(1);
         metrics.put(uuid, JacksonUtils.toJson(metric));
         return metrics;
     }
@@ -521,7 +524,7 @@ public class ClientWorker implements Closeable {
     
     public class ConfigRpcTransportClient extends ConfigTransportClient {
         
-        private final BlockingQueue<Object> listenExecutebell = new ArrayBlockingQueue<Object>(1);
+        private final BlockingQueue<Object> listenExecutebell = new ArrayBlockingQueue<>(1);
         
         private Object bellItem = new Object();
         
@@ -575,12 +578,12 @@ public class ClientWorker implements Closeable {
         
         private Map<String, String> getLabels() {
             
-            Map<String, String> labels = new HashMap<String, String>(2, 1);
+            Map<String, String> labels = new HashMap<>(2, 1);
             labels.put(RemoteConstants.LABEL_SOURCE, RemoteConstants.LABEL_SOURCE_SDK);
             labels.put(RemoteConstants.LABEL_MODULE, RemoteConstants.LABEL_MODULE_CONFIG);
             labels.put(Constants.APPNAME, AppNameUtils.getAppName());
             labels.put(Constants.VIPSERVER_TAG, EnvUtil.getSelfVipserverTag());
-            labels.put(Constants.AMORY_TAG, EnvUtil.getSelfAmorayTag());
+            labels.put(Constants.AMORY_TAG, EnvUtil.getSelfAmoryTag());
             labels.put(Constants.LOCATION_TAG, EnvUtil.getSelfLocationTag());
             
             return labels;
@@ -665,7 +668,7 @@ public class ClientWorker implements Closeable {
                 
                 @Override
                 public List<String> getServerList() {
-                    return ConfigRpcTransportClient.super.serverListManager.serverUrls;
+                    return ConfigRpcTransportClient.super.serverListManager.getServerUrls();
                     
                 }
             });
@@ -684,7 +687,7 @@ public class ClientWorker implements Closeable {
         }
         
         @Override
-        public void startInternal() throws NacosException {
+        public void startInternal() {
             executor.schedule(() -> {
                 while (!executor.isShutdown() && !executor.isTerminated()) {
                     try {
@@ -703,7 +706,7 @@ public class ClientWorker implements Closeable {
         
         @Override
         public String getName() {
-            return "config_rpc_client";
+            return serverListManager.getName();
         }
         
         @Override
@@ -714,8 +717,8 @@ public class ClientWorker implements Closeable {
         @Override
         public void executeConfigListen() {
             
-            Map<String, List<CacheData>> listenCachesMap = new HashMap<String, List<CacheData>>(16);
-            Map<String, List<CacheData>> removeListenCachesMap = new HashMap<String, List<CacheData>>(16);
+            Map<String, List<CacheData>> listenCachesMap = new HashMap<>(16);
+            Map<String, List<CacheData>> removeListenCachesMap = new HashMap<>(16);
             long now = System.currentTimeMillis();
             boolean needAllSync = now - lastAllSyncTime >= ALL_SYNC_INTERNAL;
             for (CacheData cache : cacheMap.get().values()) {
@@ -778,7 +781,7 @@ public class ClientWorker implements Closeable {
                                 rpcClient, configChangeListenRequest);
                         if (configChangeBatchListenResponse != null && configChangeBatchListenResponse.isSuccess()) {
                             
-                            Set<String> changeKeys = new HashSet<String>();
+                            Set<String> changeKeys = new HashSet<>();
                             //handle changed keys,notify listener
                             if (!CollectionUtils.isEmpty(configChangeBatchListenResponse.getChangedConfigs())) {
                                 hasChangedKeys = true;
@@ -873,7 +876,7 @@ public class ClientWorker implements Closeable {
             synchronized (ClientWorker.this) {
                 
                 Map<String, String> labels = getLabels();
-                Map<String, String> newLabels = new HashMap<String, String>(labels);
+                Map<String, String> newLabels = new HashMap<>(labels);
                 newLabels.put("taskId", taskId);
                 
                 RpcClient rpcClient = RpcClientFactory
@@ -1043,7 +1046,7 @@ public class ClientWorker implements Closeable {
                 request.putAdditionalParam(APP_NAME_PARAM, appName);
                 request.putAdditionalParam(BETAIPS_PARAM, betaIps);
                 request.putAdditionalParam(TYPE_PARAM, type);
-                request.putAdditionalParam(ENCRYPTED_DATA_KEY_PARAM, encryptedDataKey);
+                request.putAdditionalParam(ENCRYPTED_DATA_KEY_PARAM, encryptedDataKey == null ? "" : encryptedDataKey);
                 ConfigPublishResponse response = (ConfigPublishResponse) requestProxy(getOneRunningClient(), request);
                 if (!response.isSuccess()) {
                     LOGGER.warn("[{}] [publish-single] fail, dataId={}, group={}, tenant={}, code={}, msg={}",
@@ -1072,4 +1075,9 @@ public class ClientWorker implements Closeable {
     public String getAgentName() {
         return this.agent.getName();
     }
+    
+    public ConfigTransportClient getAgent() {
+        return this.agent;
+    }
+    
 }

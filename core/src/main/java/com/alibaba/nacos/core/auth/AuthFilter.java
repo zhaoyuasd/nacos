@@ -113,6 +113,10 @@ public class AuthFilter implements Filter {
                 }
                 
                 Secured secured = method.getAnnotation(Secured.class);
+                if (!protocolAuthService.enableAuth(secured)) {
+                    chain.doFilter(request, response);
+                    return;
+                }
                 Resource resource = protocolAuthService.parseResource(req, secured);
                 IdentityContext identityContext = protocolAuthService.parseIdentity(req);
                 boolean result = protocolAuthService.validateIdentity(identityContext, resource);
@@ -138,7 +142,8 @@ public class AuthFilter implements Filter {
         } catch (IllegalArgumentException e) {
             resp.sendError(HttpServletResponse.SC_BAD_REQUEST, ExceptionUtil.getAllExceptionMsg(e));
         } catch (Exception e) {
-            resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Server failed," + e.getMessage());
+            Loggers.AUTH.warn("[AUTH-FILTER] Server failed: ", e);
+            resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Server failed, " + e.getMessage());
         }
     }
     

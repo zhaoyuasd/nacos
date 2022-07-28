@@ -295,7 +295,7 @@ public abstract class DumpService {
                         String tenant = dg[2];
                         ConfigInfoWrapper configInfo = persistService.queryConfigInfo(dataId, group, tenant);
                         ConfigCacheService.dumpChange(dataId, group, tenant, configInfo.getContent(),
-                                configInfo.getLastModified());
+                                configInfo.getLastModified(), configInfo.getEncryptedDataKey());
                     }
                     LogUtil.DEFAULT_LOG.error("end checkMd5Task");
                 };
@@ -391,7 +391,7 @@ public abstract class DumpService {
     }
     
     static List<List<ConfigInfoChanged>> splitList(List<ConfigInfoChanged> list, int count) {
-        List<List<ConfigInfoChanged>> result = new ArrayList<List<ConfigInfoChanged>>(count);
+        List<List<ConfigInfoChanged>> result = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             result.add(new ArrayList<>());
         }
@@ -423,7 +423,7 @@ public abstract class DumpService {
                 String group = configInfo.getGroup();
                 String tenant = configInfo.getTenant();
                 try {
-                    List<ConfigInfoAggr> datumList = new ArrayList<ConfigInfoAggr>();
+                    List<ConfigInfoAggr> datumList = new ArrayList<>();
                     int rowCount = persistService.aggrConfigInfoCount(dataId, group, tenant);
                     int pageCount = (int) Math.ceil(rowCount * 1.0 / PAGE_SIZE);
                     for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
